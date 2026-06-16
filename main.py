@@ -96,6 +96,11 @@ def run_experiment(cover_path: str, message: str, password: str):
     print(f"  Kapasitas     : {lsb.get_capacity(cover_img)} bytes")
     print(f"  Pesan uji     : '{message[:50]}...' ({len(message)} char)\n")
 
+    print("=== CHI-SQUARE COVER IMAGE ===")
+    cover_chi = steganalysis.chi_square_attack(cover_img)
+    print(cover_chi)
+    print()
+
     payload_plain = message.encode('utf-8')
 
     # --- EXP 1: LSB Biasa ---
@@ -196,11 +201,6 @@ def run_varexperiment(cover_path: str, password: str):
 
     print(f"\n  Memproses pengujian untuk {n} variasi ukuran...\n")
 
-    print(f"  {'Ukuran':>8} | {'MSE Plain':>10} | {'PSNR Plain':>10} | "
-          f"{'MSE AES':>9} | {'PSNR AES':>9} | {'BER Plain':>9} | {'BER AES':>7} | "
-          f"{'Chi Plain':>10} | {'Chi AES':>8} | {'RS Plain':>9} | {'RS AES':>7}")
-    print(f"  {'-'*130}")
-
     results = []
     BASE_CHAR = "A"
 
@@ -225,22 +225,53 @@ def run_varexperiment(cover_path: str, password: str):
         c2 = steganalysis.chi_square_attack(stego_aes)
         r2 = steganalysis.rs_analysis(stego_aes)
 
-        chi1 = "Terdeteksi" if c1['detected'] else "Aman"
-        chi2 = "Terdeteksi" if c2['detected'] else "Aman"
-        rs1  = "Terdeteksi" if r1['detected'] else "Aman"
-        rs2  = "Terdeteksi" if r2['detected'] else "Aman"
-
-        print(f"  {size:>8} | {m1['mse']:>10} | {m1['psnr']:>10} | "
-              f"{m2['mse']:>9} | {m2['psnr']:>9} | {b1:>9} | {b2:>7} | "
-              f"{chi1:>10} | {chi2:>8} | {rs1:>9} | {rs2:>7}")
-
         results.append({
             'size': size,
             'lsb_plain': {'metrics': m1, 'ber': b1, 'chi': c1, 'rs': r1},
             'lsb_aes':   {'metrics': m2, 'ber': b2, 'chi': c2, 'rs': r2}
         })
 
-    save = input("\n  Export hasil ke CSV? [y/n]: ").strip().lower()
+    # --- OUTPUT TABEL DATA ---
+    print("=" * 100)
+    print("  [MENU 4] HASIL EKSPERIMEN SKALABILITAS (VARIASI UKURAN PAYLOAD)")
+    print("=" * 100)
+    print(f"  Citra Cover : {cover_path} ({cover_img.shape[1]}x{cover_img.shape[0]})")
+    print(f"  Kapasitas   : {capacity} bytes")
+    print("-" * 100)
+
+    print("\n[BAGIAN 1: METRIK KUALITAS VISUAL & INTEGRITAS DATA]\n")
+    print(f"  {'Ukuran':>6} | {'MSE Plain':>12} | {'MSE AES':>12} | {'PSNR Plain':>13} | {'PSNR AES':>13} | {'BER Plain':>9} | {'BER AES':>7}")
+    print("  " + "-" * 91)
+    for r in results:
+        size = r['size']
+        p = r['lsb_plain']['metrics']
+        a = r['lsb_aes']['metrics']
+        b1 = r['lsb_plain']['ber']
+        b2 = r['lsb_aes']['ber']
+        print(f"  {size:>6} | {p['mse']:>12.6f} | {a['mse']:>12.6f} | {p['psnr']:>10.4f} dB | {a['psnr']:>10.4f} dB | {b1:>9.1f} | {b2:>7.1f}")
+
+    print("\n" + "-" * 100)
+
+    print("\n[BAGIAN 2: METRIK KEAMANAN STEGANALISIS]\n")
+    print(f"  {'Ukuran':>6} | {'Chi Stat (Plain)':<22} | {'Chi Stat (AES)':<22} | {'RS Diff (Plain)':<19} | {'RS Diff (AES)':<19}")
+    print("  " + "-" * 91)
+    for r in results:
+        size = r['size']
+        cp = r['lsb_plain']['chi']
+        ca = r['lsb_aes']['chi']
+        rp = r['lsb_plain']['rs']
+        ra = r['lsb_aes']['rs']
+
+        chi1_str = f"{cp['chi_square']:.2f} [{'TERDETEKSI' if cp['detected'] else 'AMAN'}]"
+        chi2_str = f"{ca['chi_square']:.2f} [{'TERDETEKSI' if ca['detected'] else 'AMAN'}]"
+        rs1_str  = f"{rp['diff_R']:.4f} [{'TERDETEKSI' if rp['detected'] else 'AMAN'}]"
+        rs2_str  = f"{ra['diff_R']:.4f} [{'TERDETEKSI' if ra['detected'] else 'AMAN'}]"
+
+        print(f"  {size:>6} | {chi1_str:<22} | {chi2_str:<22} | {rs1_str:<19} | {rs2_str:<19}")
+
+    print("\n" + "=" * 100 + "\n")
+
+    save = input("  Export hasil ke CSV? [y/n]: ").strip().lower()
     if save == 'y':
         _export_varexperiment_csv(results, cover_path)
 
