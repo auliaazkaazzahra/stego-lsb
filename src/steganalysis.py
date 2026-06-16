@@ -2,32 +2,41 @@ import numpy as np
 import math
 from scipy.stats import chi2
 
+
 def calculate_metrics(cover: np.ndarray, stego: np.ndarray) -> dict:
     cover_f = cover.astype(np.float64)
     stego_f = stego.astype(np.float64)
     mse = np.mean((cover_f - stego_f) ** 2)
-
-    if mse == 0:
-        psnr = float('inf')
-    else:
-        psnr = 10 * math.log10((255.0 ** 2) / mse)
+    psnr = float('inf') if mse == 0 else 10 * math.log10((255.0 ** 2) / mse)
     return {'mse': round(mse, 6), 'psnr': round(psnr, 4)}
 
+
 def chi_square_attack(image: np.ndarray) -> dict:
+    # Ambil histogram frekuensi dari pixel gambar
     flat = image.flatten().astype(int)
     freq = np.bincount(flat, minlength=256)
+    
     chi_sq = 0.0
     dof = 0
-    
+
+    # 2. Hitung nilai Chi-Square
     for k in range(0, 256, 2):
-        expected = (freq[k] + freq[k+1]) / 2
+        y_actual_even = freq[k]
+        y_actual_odd = freq[k+1]
+    
+        expected = (y_actual_even + y_actual_odd) / 2
+        
         if expected > 0:
-            chi_sq += ((freq[k] - expected) ** 2) / expected
-            chi_sq += ((freq[k+1] - expected) ** 2) / expected
+            chi_sq += ((y_actual_even - expected) ** 2) / expected
+            chi_sq += ((y_actual_odd - expected) ** 2) / expected
             dof += 1
 
-    p_value = 1 - chi2.cdf(chi_sq, df=dof)
-    detected = p_value < 0.05
+    # 3. Hitung p-value 
+    p_value = chi2.cdf(chi_sq, df=dof)
+    
+    # 4. Tentukan batas deteksi
+    detected = p_value > 0.95
+    
     return {
         'chi_square': round(chi_sq, 4),
         'p_value': round(p_value, 6),
@@ -63,30 +72,43 @@ def rs_analysis(image: np.ndarray) -> dict:
     for i in range(0, h - 1, 1):
         for j in range(0, w - group_size, group_size):
             group = gray[i, j:j+group_size].tolist()
-            if len(group) < group_size: continue
+            if len(group) < group_size:
+                continue
 
             total_groups += 1
             f_original = discriminant(group)
 
             # Positive mask
             f_flipped = discriminant(flip_lsb(group, mask))
-            if f_flipped > f_original: R += 1
-            elif f_flipped < f_original: S += 1
+            if f_flipped > f_original:
+                R += 1
+            elif f_flipped < f_original:
+                S += 1
 
             # Negative mask
             f_flipped_neg = discriminant(flip_lsb(group, [-m for m in mask]))
-            if f_flipped_neg > f_original: Rm += 1
-            elif f_flipped_neg < f_original: Sm += 1
+            if f_flipped_neg > f_original:
+                Rm += 1
+            elif f_flipped_neg < f_original:
+                Sm += 1
 
-    R_norm, S_norm = R / total_groups, S / total_groups
-    Rm_norm, Sm_norm = Rm / total_groups, Sm / total_groups
-    
+    R_norm  = R  / total_groups
+    S_norm  = S  / total_groups
+    Rm_norm = Rm / total_groups
+    Sm_norm = Sm / total_groups
+
     diff_R = abs(R_norm - Rm_norm)
     diff_S = abs(S_norm - Sm_norm)
-    detected = diff_R < 0.02 and diff_S < 0.02
+
+    detected = diff_R > 0.02 or diff_S > 0.02
 
     return {
-        'diff_R': round(diff_R, 4), 'diff_S': round(diff_S, 4),
+        'R':      round(R_norm,  4),
+        'S':      round(S_norm,  4),
+        'Rm':     round(Rm_norm, 4),
+        'Sm':     round(Sm_norm, 4),
+        'diff_R': round(diff_R,  4),
+        'diff_S': round(diff_S,  4),
         'detected': detected,
         'conclusion': 'TERDETEKSI mengandung pesan' if detected else 'TIDAK terdeteksi'
     }

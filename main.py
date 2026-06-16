@@ -1,14 +1,6 @@
-"""
-Penggunaan:
-  python main.py                              ← mode tanya jawab
-  python main.py embed <cov> <out> <msg> <pw> ← embedding pesan terenkripsi
-  python main.py extract <stego> <pw>         ← ekstraksi & dekripsi pesan
-  python main.py experiment <cov> <msg> <pw>  ← eksperimen perbandingan
-  python main.py varexperiment <cov> <pw>     ← eksperimen variasi ukuran
-"""
-
 import sys
 import os
+import csv
 import numpy as np
 from PIL import Image
 
@@ -27,36 +19,35 @@ def embed_pipeline(cover_path: str, message: str, password: str, output_path: st
     print("  EMBED: LSB + AES-128")
     print(f"{'='*55}")
 
-    # Memuat citra cover
     cover_img = lsb.load_image(cover_path)
     capacity = lsb.get_capacity(cover_img)
     print(f"  Citra cover   : {cover_path} ({cover_img.shape[1]}x{cover_img.shape[0]})")
     print(f"  Kapasitas     : {capacity} bytes")
 
-    # Proses Enkripsi AES-128
     key = aes.generate_key(password)
     iv, ciphertext = aes.encrypt(message.encode('utf-8'), key)
     payload = iv + ciphertext
     print(f"  Ukuran pesan  : {len(message)} karakter")
     print(f"  Payload (enc) : {len(payload)} bytes")
 
-    # Validasi Kapasitas
     if len(payload) > capacity:
         print(f"\n  [ERROR] Payload melebihi kapasitas! ({len(payload)} > {capacity})")
         return None
 
-    # Proses Penyisipan LSB
     stego_img = lsb.embed(cover_img, payload)
     lsb.save_image(stego_img, output_path)
 
-    # Menghitung Metrik Kualitas Visual
+    extracted_payload = lsb.extract(stego_img)
+    ber = lsb.calculate_ber(payload, extracted_payload)
+
     metrics = lsb.calculate_metrics(cover_img, stego_img)
     print(f"\n  Output stego  : {output_path}")
     print(f"  MSE           : {metrics['mse']}")
     print(f"  PSNR          : {metrics['psnr']} dB")
+    print(f"  BER           : {ber} ({'Lossless ✓' if ber == 0.0 else 'Ada error!'})")
     print(f"{'='*55}\n")
 
-    return metrics
+    return {**metrics, 'ber': ber}
 
 
 # ============================================================
@@ -71,11 +62,9 @@ def extract_pipeline(stego_path: str, password: str) -> str:
     print("  EXTRACT: LSB + AES-128")
     print(f"{'='*55}")
 
-    # Ekstraksi Bit dari Citra Stego
     stego_img = lsb.load_image(stego_path)
     payload = lsb.extract(stego_img)
 
-    # Pemisahan IV, Ciphertext, dan Dekripsi
     iv = payload[:16]
     ciphertext = payload[16:]
     key = aes.generate_key(password)
@@ -96,8 +85,7 @@ def extract_pipeline(stego_path: str, password: str) -> str:
 
 def run_experiment(cover_path: str, message: str, password: str):
     """
-    Eksperimen komparasi untuk bahan analisis utama pada makalah:
-    Mengukur PSNR, MSE, Chi-square, dan RS Analysis.
+    Eksperimen komparasi LSB Biasa dan LSB + AES-128.
     """
     print(f"\n{'='*60}")
     print("  EKSPERIMEN: LSB Biasa vs LSB + AES-128")
@@ -110,46 +98,61 @@ def run_experiment(cover_path: str, message: str, password: str):
 
     payload_plain = message.encode('utf-8')
 
-    # --- EXP 1: LSB Biasa (Tanpa Enkripsi) ---
+    # --- EXP 1: LSB Biasa ---
     print("  [EXP 1] Menjalankan LSB Biasa...")
     stego_plain = lsb.embed(cover_img, payload_plain)
+    extracted_plain = lsb.extract(stego_plain)
     m1 = lsb.calculate_metrics(cover_img, stego_plain)
+    b1 = lsb.calculate_ber(payload_plain, extracted_plain)
     c1 = steganalysis.chi_square_attack(stego_plain)
     r1 = steganalysis.rs_analysis(stego_plain)
     print(f"    MSE         : {m1['mse']}")
     print(f"    PSNR        : {m1['psnr']} dB")
+    print(f"    BER         : {b1}")
     print(f"    Chi-square  : {c1['conclusion']}")
     print(f"    RS Analysis : {r1['conclusion']}\n")
 
-    # --- EXP 2: LSB + AES-128 (Dengan Enkripsi) ---
+    # --- EXP 2: LSB + AES-128 ---
     print("  [EXP 2] Menjalankan LSB + AES-128...")
     key = aes.generate_key(password)
     iv, ciphertext = aes.encrypt(payload_plain, key)
     payload_enc = iv + ciphertext
     stego_aes = lsb.embed(cover_img, payload_enc)
+    extracted_enc = lsb.extract(stego_aes)
     m2 = lsb.calculate_metrics(cover_img, stego_aes)
+    b2 = lsb.calculate_ber(payload_enc, extracted_enc)
     c2 = steganalysis.chi_square_attack(stego_aes)
     r2 = steganalysis.rs_analysis(stego_aes)
     print(f"    MSE         : {m2['mse']}")
     print(f"    PSNR        : {m2['psnr']} dB")
+    print(f"    BER         : {b2}")
     print(f"    Chi-square  : {c2['conclusion']}")
     print(f"    RS Analysis : {r2['conclusion']}\n")
 
-    # --- OUTPUT TABEL DATA MAKALAH ---
-    print(f"{'='*60}")
-    print(f"  {'Metrik Pengujian':<25} | {'LSB Biasa':<14} | {'LSB + AES-128':<14}")
-    print(f"  {'-'*56}")
-    print(f"  {'MSE':<25} | {str(m1['mse']):<14} | {str(m2['mse']):<14}")
-    print(f"  {'PSNR (dB)':<25} | {str(m1['psnr']):<14} | {str(m2['psnr']):<14}")
-    print(f"  {'Chi-sq p-value':<25} | {str(c1['p_value']):<14} | {str(c2['p_value']):<14}")
-    print(f"  {'Chi-sq Terdeteksi':<25} | {str(c1['detected']):<14} | {str(c2['detected']):<14}")
-    print(f"  {'RS Terdeteksi':<25} | {str(r1['detected']):<14} | {str(r2['detected']):<14}")
-    print(f"{'='*60}\n")
+    # --- OUTPUT TABEL DATA ---
+    print(f"{'='*65}")
+    print(f"  {'Metrik Pengujian':<25} | {'LSB Biasa':<16} | {'LSB + AES-128':<16}")
+    print(f"  {'-'*61}")
+    print(f"  {'MSE':<25} | {str(m1['mse']):<16} | {str(m2['mse']):<16}")
+    print(f"  {'PSNR (dB)':<25} | {str(m1['psnr']):<16} | {str(m2['psnr']):<16}")
+    print(f"  {'BER':<25} | {str(b1):<16} | {str(b2):<16}")
+    print(f"  {'Chi-sq p-value':<25} | {str(c1['p_value']):<16} | {str(c2['p_value']):<16}")
+    print(f"  {'Chi-sq Terdeteksi':<25} | {str(c1['detected']):<16} | {str(c2['detected']):<16}")
+    print(f"  {'RS diff_R':<25} | {str(r1['diff_R']):<16} | {str(r2['diff_R']):<16}")
+    print(f"  {'RS diff_S':<25} | {str(r1['diff_S']):<16} | {str(r2['diff_S']):<16}")
+    print(f"  {'RS Terdeteksi':<25} | {str(r1['detected']):<16} | {str(r2['detected']):<16}")
+    print(f"{'='*65}\n")
 
-    return {
-        'lsb_plain': {'metrics': m1, 'chi': c1, 'rs': r1},
-        'lsb_aes':   {'metrics': m2, 'chi': c2, 'rs': r2}
+    results = {
+        'lsb_plain': {'metrics': m1, 'ber': b1, 'chi': c1, 'rs': r1},
+        'lsb_aes':   {'metrics': m2, 'ber': b2, 'chi': c2, 'rs': r2}
     }
+
+    save = input("  Export hasil ke CSV? [y/n]: ").strip().lower()
+    if save == 'y':
+        _export_experiment_csv(results, cover_path, len(message))
+
+    return results
 
 
 # ============================================================
@@ -158,8 +161,7 @@ def run_experiment(cover_path: str, message: str, password: str):
 
 def run_varexperiment(cover_path: str, password: str):
     """
-    Eksperimen variasi ukuran payload untuk melihat pengaruh kuantitas
-    pesan terhadap nilai degradasi citra dan tingkat kecurigaan deteksi.
+    Eksperimen variasi ukuran payload terhadap tingkat kecurigaan deteksi.
     """
     cover_img = lsb.load_image(cover_path)
     capacity = lsb.get_capacity(cover_img)
@@ -171,7 +173,6 @@ def run_varexperiment(cover_path: str, password: str):
     print(f"  Kapasitas   : {capacity} bytes")
     print(f"  Password    : {password}\n")
 
-    # Mengambil input variasi ukuran dari pengguna
     try:
         n = int(input("  Berapa variasi ukuran pesan yang ingin diuji? (contoh: 3): "))
     except ValueError:
@@ -195,31 +196,32 @@ def run_varexperiment(cover_path: str, password: str):
 
     print(f"\n  Memproses pengujian untuk {n} variasi ukuran...\n")
 
-    # Cetak Header Tabel Parameter Komparatif
     print(f"  {'Ukuran':>8} | {'MSE Plain':>10} | {'PSNR Plain':>10} | "
-          f"{'MSE AES':>9} | {'PSNR AES':>9} | {'Chi Plain':>10} | "
-          f"{'Chi AES':>8} | {'RS Plain':>9} | {'RS AES':>7}")
-    print(f"  {'-'*110}")
+          f"{'MSE AES':>9} | {'PSNR AES':>9} | {'BER Plain':>9} | {'BER AES':>7} | "
+          f"{'Chi Plain':>10} | {'Chi AES':>8} | {'RS Plain':>9} | {'RS AES':>7}")
+    print(f"  {'-'*130}")
 
     results = []
-    BASE_CHAR = "A"  # Karakter standard padding generator untuk sampel uji
+    BASE_CHAR = "A"
 
     for size in sizes:
         message = BASE_CHAR * size
         payload_plain = message.encode('utf-8')
 
-        # Evaluasi Alur LSB Polos
         stego_plain = lsb.embed(cover_img, payload_plain)
+        extracted_plain = lsb.extract(stego_plain)
         m1 = lsb.calculate_metrics(cover_img, stego_plain)
+        b1 = lsb.calculate_ber(payload_plain, extracted_plain)
         c1 = steganalysis.chi_square_attack(stego_plain)
         r1 = steganalysis.rs_analysis(stego_plain)
 
-        # Evaluasi Alur LSB + AES-128
         key = aes.generate_key(password)
         iv, ciphertext = aes.encrypt(payload_plain, key)
         payload_enc = iv + ciphertext
         stego_aes = lsb.embed(cover_img, payload_enc)
+        extracted_enc = lsb.extract(stego_aes)
         m2 = lsb.calculate_metrics(cover_img, stego_aes)
+        b2 = lsb.calculate_ber(payload_enc, extracted_enc)
         c2 = steganalysis.chi_square_attack(stego_aes)
         r2 = steganalysis.rs_analysis(stego_aes)
 
@@ -228,40 +230,102 @@ def run_varexperiment(cover_path: str, password: str):
         rs1  = "Terdeteksi" if r1['detected'] else "Aman"
         rs2  = "Terdeteksi" if r2['detected'] else "Aman"
 
-        # Tampilkan record baris tabel
         print(f"  {size:>8} | {m1['mse']:>10} | {m1['psnr']:>10} | "
-              f"{m2['mse']:>9} | {m2['psnr']:>9} | {chi1:>10} | "
-              f"{chi2:>8} | {rs1:>9} | {rs2:>7}")
+              f"{m2['mse']:>9} | {m2['psnr']:>9} | {b1:>9} | {b2:>7} | "
+              f"{chi1:>10} | {chi2:>8} | {rs1:>9} | {rs2:>7}")
 
         results.append({
             'size': size,
-            'lsb_plain': {'metrics': m1, 'chi': c1, 'rs': r1},
-            'lsb_aes':   {'metrics': m2, 'chi': c2, 'rs': r2}
+            'lsb_plain': {'metrics': m1, 'ber': b1, 'chi': c1, 'rs': r1},
+            'lsb_aes':   {'metrics': m2, 'ber': b2, 'chi': c2, 'rs': r2}
         })
+
+    save = input("\n  Export hasil ke CSV? [y/n]: ").strip().lower()
+    if save == 'y':
+        _export_varexperiment_csv(results, cover_path)
+
     return results
 
 
 # ============================================================
-# MODE INTERAKTIF (TANYA JAWAB MENU)
+# EXPORT CSV
+# ============================================================
+
+def _export_experiment_csv(results: dict, cover_path: str, msg_len: int):
+    filename = "hasil_eksperimen_komparasi.csv"
+    plain = results['lsb_plain']
+    aes_r = results['lsb_aes']
+
+    rows = [
+        ["Metrik", "LSB Biasa", "LSB + AES-128"],
+        ["MSE",           plain['metrics']['mse'],   aes_r['metrics']['mse']],
+        ["PSNR (dB)",     plain['metrics']['psnr'],  aes_r['metrics']['psnr']],
+        ["BER",           plain['ber'],               aes_r['ber']],
+        ["Chi-sq Stat",   plain['chi']['chi_square'], aes_r['chi']['chi_square']],
+        ["Chi-sq p-value",plain['chi']['p_value'],    aes_r['chi']['p_value']],
+        ["Chi-sq Deteksi",plain['chi']['detected'],   aes_r['chi']['detected']],
+        ["RS diff_R",     plain['rs']['diff_R'],      aes_r['rs']['diff_R']],
+        ["RS diff_S",     plain['rs']['diff_S'],      aes_r['rs']['diff_S']],
+        ["RS Deteksi",    plain['rs']['detected'],    aes_r['rs']['detected']],
+    ]
+
+    with open(filename, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow([f"# Cover: {cover_path} | Panjang pesan: {msg_len} karakter"])
+        writer.writerows(rows)
+
+    print(f"\n  [INFO] Hasil disimpan ke: {filename}")
+
+
+def _export_varexperiment_csv(results: list, cover_path: str):
+    filename = "hasil_eksperimen_variasi.csv"
+
+    header = [
+        "Ukuran (char)",
+        "MSE Plain", "PSNR Plain", "BER Plain",
+        "Chi Plain Stat", "Chi Plain p-val", "Chi Plain Deteksi",
+        "RS Plain diff_R", "RS Plain diff_S", "RS Plain Deteksi",
+        "MSE AES", "PSNR AES", "BER AES",
+        "Chi AES Stat", "Chi AES p-val", "Chi AES Deteksi",
+        "RS AES diff_R", "RS AES diff_S", "RS AES Deteksi",
+    ]
+
+    with open(filename, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow([f"# Cover: {cover_path}"])
+        writer.writerow(header)
+        for r in results:
+            p = r['lsb_plain']
+            a = r['lsb_aes']
+            writer.writerow([
+                r['size'],
+                p['metrics']['mse'], p['metrics']['psnr'], p['ber'],
+                p['chi']['chi_square'], p['chi']['p_value'], p['chi']['detected'],
+                p['rs']['diff_R'], p['rs']['diff_S'], p['rs']['detected'],
+                a['metrics']['mse'], a['metrics']['psnr'], a['ber'],
+                a['chi']['chi_square'], a['chi']['p_value'], a['chi']['detected'],
+                a['rs']['diff_R'], a['rs']['diff_S'], a['rs']['detected'],
+            ])
+
+    print(f"\n  [INFO] Hasil disimpan ke: {filename}")
+
+
+# ============================================================
+# MODE INTERAKTIF
 # ============================================================
 
 def interactive_mode():
-    """
-    Mode Interaktif CLI dengan visualisasi ASCII Art yang estetik dan jelas.
-    Menggunakan loop agar tidak langsung keluar otomatis setelah proses selesai.
-    """
     while True:
-        # Bersihkan layar terminal agar tampilan rapi setiap kembali ke menu
         os.system('cls' if os.name == 'nt' else 'clear')
 
         print("╔══════════════════════════════════════════════════════════════╗")
         print("║                                                              ║")
-        print("║     ██╗     ██████╗ ██████╗        █████╗ ███████╗██████╗    ║")
-        print("║     ██║    ██╔════╝ ██╔══██╗      ██╔══██╗██╔════╝██╔════╝   ║")
-        print("║     ██║    ╚█████╗  ██████╔╝      ███████║█████╗  ███████╗   ║")
-        print("║     ██║     ╚═══██╗ ██╔══██╗      ██╔══██║██╔══╝  ╚════██║   ║")
-        print("║     ███████╗██████╔╝██████╔╝      ██║  ██║███████╗███████║   ║")
-        print("║     ╚══════╝╚═════╝ ╚═════╝       ╚═╝  ╚═╝╚══════╝╚══════╝   ║")
+        print("║      ██╗     ██████╗ ██████╗        █████╗ ███████╗██████╗   ║")
+        print("║      ██║    ██╔════╝ ██╔══██╗      ██╔══██╗██╔════╝██╔════╝  ║")
+        print("║      ██║    ╚█████╗  ██████╔╝      ███████║█████╗  ███████╗  ║")
+        print("║      ██║     ╚═══██╗ ██╔══██╗      ██╔══██║██╔══╝  ╚════██║  ║")
+        print("║      ███████╗██████╔╝██████╔╝      ██║  ██║███████╗███████║  ║")
+        print("║      ╚══════╝╚═════╝ ╚═════╝       ╚═╝  ╚═╝╚══════╝╚══════╝  ║")
         print("║                                                              ║")
         print("║                  S T E G A N O G R A P H Y                   ║")
         print("║                                                              ║")
@@ -269,12 +333,9 @@ def interactive_mode():
         print("║  WELCOME TO LSB-AES VAULT                                    ║")
         print("║  Secure Image Steganography Pipeline CLI                     ║")
         print("║  AES-128-CBC | Least Significant Bit Implementation          ║")
-        print("║  Evaluation Metrics: PSNR, MSE, Chi-Square, RS Analysis      ║")
+        print("║  Metrics: PSNR, MSE, BER, Chi-Square, RS Analysis            ║")
         print("╚══════════════════════════════════════════════════════════════╝")
-        
-        # Status bar di bawah bingkai utama
         print("-" * 64)
-        
         print("  [1] Embed Pesan Rahasia ke Citra (Enkripsi AES)")
         print("  [2] Ekstrak & Dekripsi Pesan dari Citra Stego")
         print("  [3] Eksperimen Komparasi Matriks (1 Sampel Pesan)")
@@ -314,7 +375,7 @@ def interactive_mode():
             pw    = input("  Password kunci: ").strip()
             run_varexperiment(cover, pw)
             input("\n  [INFO] Eksperimen selesai. Tekan Enter untuk kembali ke menu utama...")
-            
+
         elif choice == "5":
             print("\n  Terima kasih! Keluar dari sistem LSB+AES Vault.")
             break
@@ -329,7 +390,6 @@ def interactive_mode():
 # ============================================================
 
 def _make_dummy_cover(path: str, size: int = 512):
-    """Membuat gambar contoh bising secara acak jika berkas pengujian absen."""
     dummy = np.random.randint(50, 200, (size, size, 3), dtype=np.uint8)
     Image.fromarray(dummy).save(path)
     print(f"  [INFO] Citra dummy {size}x{size} sukses dibuat: {path}")
@@ -341,36 +401,30 @@ def _make_dummy_cover(path: str, size: int = 512):
 
 if __name__ == "__main__":
 
-    # Kasus 1: Akses Menu Interaktif
     if len(sys.argv) < 2:
         interactive_mode()
 
-    # Kasus 2: CLI Command Embed
     elif sys.argv[1] == "embed" and len(sys.argv) == 6:
         _, _, cover, output, msg, pw = sys.argv
         embed_pipeline(cover, msg, pw, output)
 
-    # Kasus 3: CLI Command Extract
     elif sys.argv[1] == "extract" and len(sys.argv) == 4:
         _, _, stego, pw = sys.argv
         extract_pipeline(stego, pw)
 
-    # Kasus 4: CLI Command Experiment Perbandingan
     elif sys.argv[1] == "experiment" and len(sys.argv) == 5:
         _, _, cover, msg, pw = sys.argv
         run_experiment(cover, msg, pw)
 
-    # Kasus 5: CLI Command Experiment Variasi Ukuran
     elif sys.argv[1] == "varexperiment" and len(sys.argv) == 4:
         _, _, cover, pw = sys.argv
         run_varexperiment(cover, pw)
 
-    # Kasus Default: Penanganan salah argumen (Menampilkan Manual Panduan)
     else:
         print("\n[ERROR] Format parameter CLI salah.")
         print("Panduan Penggunaan:")
-        print("  python main.py                              → Mode interaktif (pilihan menu)")
+        print("  python main.py                               → Mode interaktif")
         print("  python main.py embed <cover> <out> <msg> <pw>")
         print("  python main.py extract <stego> <pw>")
         print("  python main.py experiment <cover> <msg> <pw>")
-        print("  python main.py varexperiment <cover> <pw>  → Variasi beban panjang pesan")
+        print("  python main.py varexperiment <cover> <pw>")
