@@ -2,6 +2,8 @@ import sys
 import os
 import csv
 import numpy as np
+import random
+import string
 from PIL import Image
 
 from src import aes, lsb, steganalysis
@@ -109,7 +111,7 @@ def run_experiment(cover_path: str, message: str, password: str):
     extracted_plain = lsb.extract(stego_plain)
     m1 = lsb.calculate_metrics(cover_img, stego_plain)
     b1 = lsb.calculate_ber(payload_plain, extracted_plain)
-    c1 = steganalysis.chi_square_attack(stego_plain)
+    c1 = steganalysis.chi_square_attack(stego_plain, len(payload_plain))
     r1 = steganalysis.rs_analysis(stego_plain)
     print(f"    MSE         : {m1['mse']}")
     print(f"    PSNR        : {m1['psnr']} dB")
@@ -126,7 +128,7 @@ def run_experiment(cover_path: str, message: str, password: str):
     extracted_enc = lsb.extract(stego_aes)
     m2 = lsb.calculate_metrics(cover_img, stego_aes)
     b2 = lsb.calculate_ber(payload_enc, extracted_enc)
-    c2 = steganalysis.chi_square_attack(stego_aes)
+    c2 = steganalysis.chi_square_attack(stego_aes, len(payload_enc))
     r2 = steganalysis.rs_analysis(stego_aes)
     print(f"    MSE         : {m2['mse']}")
     print(f"    PSNR        : {m2['psnr']} dB")
@@ -202,17 +204,20 @@ def run_varexperiment(cover_path: str, password: str):
     print(f"\n  Memproses pengujian untuk {n} variasi ukuran...\n")
 
     results = []
-    BASE_CHAR = "A"
 
     for size in sizes:
-        message = BASE_CHAR * size
+        # Membuat string acak berisi kombinasi huruf dan angka sepanjang 'size'
+        characters = string.ascii_letters + string.digits  # a-z, A-Z, 0-9
+        message = ''.join(random.choice(characters) for _ in range(size))
+        
         payload_plain = message.encode('utf-8')
 
         stego_plain = lsb.embed(cover_img, payload_plain)
         extracted_plain = lsb.extract(stego_plain)
         m1 = lsb.calculate_metrics(cover_img, stego_plain)
         b1 = lsb.calculate_ber(payload_plain, extracted_plain)
-        c1 = steganalysis.chi_square_attack(stego_plain)
+    
+        c1 = steganalysis.chi_square_attack(stego_plain, len(payload_plain))
         r1 = steganalysis.rs_analysis(stego_plain)
 
         key = aes.generate_key(password)
@@ -222,7 +227,8 @@ def run_varexperiment(cover_path: str, password: str):
         extracted_enc = lsb.extract(stego_aes)
         m2 = lsb.calculate_metrics(cover_img, stego_aes)
         b2 = lsb.calculate_ber(payload_enc, extracted_enc)
-        c2 = steganalysis.chi_square_attack(stego_aes)
+    
+        c2 = steganalysis.chi_square_attack(stego_aes, len(payload_enc))
         r2 = steganalysis.rs_analysis(stego_aes)
 
         results.append({

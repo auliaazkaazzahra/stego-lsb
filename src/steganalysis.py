@@ -11,15 +11,18 @@ def calculate_metrics(cover: np.ndarray, stego: np.ndarray) -> dict:
     return {'mse': round(mse, 6), 'psnr': round(psnr, 4)}
 
 
-def chi_square_attack(image: np.ndarray) -> dict:
-    # Ambil histogram frekuensi dari pixel gambar
+def chi_square_attack(image: np.ndarray, payload_size_bytes: int = None) -> dict:
     flat = image.flatten().astype(int)
-    freq = np.bincount(flat, minlength=256)
     
+    if payload_size_bytes is not None:
+        total_pixels_affected = payload_size_bytes * 8
+        if total_pixels_affected <= len(flat):
+            flat = flat[:total_pixels_affected]
+    
+    freq = np.bincount(flat, minlength=256)
     chi_sq = 0.0
     dof = 0
 
-    # 2. Hitung nilai Chi-Square
     for k in range(0, 256, 2):
         y_actual_even = freq[k]
         y_actual_odd = freq[k+1]
@@ -31,10 +34,11 @@ def chi_square_attack(image: np.ndarray) -> dict:
             chi_sq += ((y_actual_odd - expected) ** 2) / expected
             dof += 1
 
-    # 3. Hitung p-value 
-    p_value = chi2.cdf(chi_sq, df=dof)
+    if dof > 0 and chi_sq > 0:
+        p_value = chi2.cdf(chi_sq, df=dof)
+    else:
+        p_value = 0.0
     
-    # 4. Tentukan batas deteksi
     detected = p_value > 0.95
     
     return {
