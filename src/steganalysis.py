@@ -49,7 +49,10 @@ def rs_analysis(image: np.ndarray) -> dict:
             if m == 1:
                 flipped[i] = flipped[i] ^ 1
             elif m == -1:
-                flipped[i] = flipped[i] ^ 1 if flipped[i] % 2 == 0 else flipped[i] ^ 1
+                if flipped[i] % 2 == 0:
+                    flipped[i] += 1
+                else:
+                    flipped[i] -= 1
         return flipped
 
     mask = [1, 0, 1, 0]
