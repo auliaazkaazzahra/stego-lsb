@@ -1,0 +1,376 @@
+"""
+Penggunaan:
+  python main.py                              ← mode tanya jawab
+  python main.py embed <cov> <out> <msg> <pw> ← embedding pesan terenkripsi
+  python main.py extract <stego> <pw>         ← ekstraksi & dekripsi pesan
+  python main.py experiment <cov> <msg> <pw>  ← eksperimen perbandingan
+  python main.py varexperiment <cov> <pw>     ← eksperimen variasi ukuran
+"""
+
+import sys
+import os
+import numpy as np
+from PIL import Image
+
+from src import aes, lsb, steganalysis
+
+
+# ============================================================
+# PIPELINE UTAMA: EMBED
+# ============================================================
+
+def embed_pipeline(cover_path: str, message: str, password: str, output_path: str):
+    """
+    Pipeline embedding: enkripsi AES-128 → sisipkan ke LSB.
+    """
+    print(f"\n{'='*55}")
+    print("  EMBED: LSB + AES-128")
+    print(f"{'='*55}")
+
+    # Memuat citra cover
+    cover_img = lsb.load_image(cover_path)
+    capacity = lsb.get_capacity(cover_img)
+    print(f"  Citra cover   : {cover_path} ({cover_img.shape[1]}x{cover_img.shape[0]})")
+    print(f"  Kapasitas     : {capacity} bytes")
+
+    # Proses Enkripsi AES-128
+    key = aes.generate_key(password)
+    iv, ciphertext = aes.encrypt(message.encode('utf-8'), key)
+    payload = iv + ciphertext
+    print(f"  Ukuran pesan  : {len(message)} karakter")
+    print(f"  Payload (enc) : {len(payload)} bytes")
+
+    # Validasi Kapasitas
+    if len(payload) > capacity:
+        print(f"\n  [ERROR] Payload melebihi kapasitas! ({len(payload)} > {capacity})")
+        return None
+
+    # Proses Penyisipan LSB
+    stego_img = lsb.embed(cover_img, payload)
+    lsb.save_image(stego_img, output_path)
+
+    # Menghitung Metrik Kualitas Visual
+    metrics = lsb.calculate_metrics(cover_img, stego_img)
+    print(f"\n  Output stego  : {output_path}")
+    print(f"  MSE           : {metrics['mse']}")
+    print(f"  PSNR          : {metrics['psnr']} dB")
+    print(f"{'='*55}\n")
+
+    return metrics
+
+
+# ============================================================
+# PIPELINE UTAMA: EXTRACT
+# ============================================================
+
+def extract_pipeline(stego_path: str, password: str) -> str:
+    """
+    Pipeline ekstraksi: ekstrak bit LSB → dekripsi AES-128.
+    """
+    print(f"\n{'='*55}")
+    print("  EXTRACT: LSB + AES-128")
+    print(f"{'='*55}")
+
+    # Ekstraksi Bit dari Citra Stego
+    stego_img = lsb.load_image(stego_path)
+    payload = lsb.extract(stego_img)
+
+    # Pemisahan IV, Ciphertext, dan Dekripsi
+    iv = payload[:16]
+    ciphertext = payload[16:]
+    key = aes.generate_key(password)
+    plaintext = aes.decrypt(ciphertext, key, iv)
+    message = plaintext.decode('utf-8')
+
+    print(f"  Stego-image   : {stego_path}")
+    print(f"  Payload size  : {len(payload)} bytes")
+    print(f"  Pesan asli    : {message}")
+    print(f"{'='*55}\n")
+
+    return message
+
+
+# ============================================================
+# EKSPERIMEN 1: PERBANDINGAN LSB BIASA vs LSB + AES-128
+# ============================================================
+
+def run_experiment(cover_path: str, message: str, password: str):
+    """
+    Eksperimen komparasi untuk bahan analisis utama pada makalah:
+    Mengukur PSNR, MSE, Chi-square, dan RS Analysis.
+    """
+    print(f"\n{'='*60}")
+    print("  EKSPERIMEN: LSB Biasa vs LSB + AES-128")
+    print(f"{'='*60}")
+
+    cover_img = lsb.load_image(cover_path)
+    print(f"  Citra cover   : {cover_path} ({cover_img.shape[1]}x{cover_img.shape[0]})")
+    print(f"  Kapasitas     : {lsb.get_capacity(cover_img)} bytes")
+    print(f"  Pesan uji     : '{message[:50]}...' ({len(message)} char)\n")
+
+    payload_plain = message.encode('utf-8')
+
+    # --- EXP 1: LSB Biasa (Tanpa Enkripsi) ---
+    print("  [EXP 1] Menjalankan LSB Biasa...")
+    stego_plain = lsb.embed(cover_img, payload_plain)
+    m1 = lsb.calculate_metrics(cover_img, stego_plain)
+    c1 = steganalysis.chi_square_attack(stego_plain)
+    r1 = steganalysis.rs_analysis(stego_plain)
+    print(f"    MSE         : {m1['mse']}")
+    print(f"    PSNR        : {m1['psnr']} dB")
+    print(f"    Chi-square  : {c1['conclusion']}")
+    print(f"    RS Analysis : {r1['conclusion']}\n")
+
+    # --- EXP 2: LSB + AES-128 (Dengan Enkripsi) ---
+    print("  [EXP 2] Menjalankan LSB + AES-128...")
+    key = aes.generate_key(password)
+    iv, ciphertext = aes.encrypt(payload_plain, key)
+    payload_enc = iv + ciphertext
+    stego_aes = lsb.embed(cover_img, payload_enc)
+    m2 = lsb.calculate_metrics(cover_img, stego_aes)
+    c2 = steganalysis.chi_square_attack(stego_aes)
+    r2 = steganalysis.rs_analysis(stego_aes)
+    print(f"    MSE         : {m2['mse']}")
+    print(f"    PSNR        : {m2['psnr']} dB")
+    print(f"    Chi-square  : {c2['conclusion']}")
+    print(f"    RS Analysis : {r2['conclusion']}\n")
+
+    # --- OUTPUT TABEL DATA MAKALAH ---
+    print(f"{'='*60}")
+    print(f"  {'Metrik Pengujian':<25} | {'LSB Biasa':<14} | {'LSB + AES-128':<14}")
+    print(f"  {'-'*56}")
+    print(f"  {'MSE':<25} | {str(m1['mse']):<14} | {str(m2['mse']):<14}")
+    print(f"  {'PSNR (dB)':<25} | {str(m1['psnr']):<14} | {str(m2['psnr']):<14}")
+    print(f"  {'Chi-sq p-value':<25} | {str(c1['p_value']):<14} | {str(c2['p_value']):<14}")
+    print(f"  {'Chi-sq Terdeteksi':<25} | {str(c1['detected']):<14} | {str(c2['detected']):<14}")
+    print(f"  {'RS Terdeteksi':<25} | {str(r1['detected']):<14} | {str(r2['detected']):<14}")
+    print(f"{'='*60}\n")
+
+    return {
+        'lsb_plain': {'metrics': m1, 'chi': c1, 'rs': r1},
+        'lsb_aes':   {'metrics': m2, 'chi': c2, 'rs': r2}
+    }
+
+
+# ============================================================
+# EKSPERIMEN 2: VARIASI UKURAN PESAN
+# ============================================================
+
+def run_varexperiment(cover_path: str, password: str):
+    """
+    Eksperimen variasi ukuran payload untuk melihat pengaruh kuantitas
+    pesan terhadap nilai degradasi citra dan tingkat kecurigaan deteksi.
+    """
+    cover_img = lsb.load_image(cover_path)
+    capacity = lsb.get_capacity(cover_img)
+
+    print(f"\n{'='*65}")
+    print("  EKSPERIMEN VARIASI UKURAN PESAN")
+    print(f"{'='*65}")
+    print(f"  Citra cover : {cover_path} ({cover_img.shape[1]}x{cover_img.shape[0]})")
+    print(f"  Kapasitas   : {capacity} bytes")
+    print(f"  Password    : {password}\n")
+
+    # Mengambil input variasi ukuran dari pengguna
+    try:
+        n = int(input("  Berapa variasi ukuran pesan yang ingin diuji? (contoh: 3): "))
+    except ValueError:
+        print("  [ERROR] Input harus berupa angka bulat.")
+        return None
+
+    sizes = []
+    for i in range(n):
+        while True:
+            try:
+                s = int(input(f"  Ukuran pesan ke-{i+1} (dalam karakter, maks ~{capacity-50}): "))
+                if s <= 0:
+                    print("  [WARNING] Ukuran pesan harus lebih besar dari 0.")
+                elif s > capacity - 50:
+                    print(f"  [WARNING] Payload terlalu besar! Batas aman sekitar {capacity-50} karakter.")
+                else:
+                    sizes.append(s)
+                    break
+            except ValueError:
+                print("  [ERROR] Sila masukkan angka yang valid.")
+
+    print(f"\n  Memproses pengujian untuk {n} variasi ukuran...\n")
+
+    # Cetak Header Tabel Parameter Komparatif
+    print(f"  {'Ukuran':>8} | {'MSE Plain':>10} | {'PSNR Plain':>10} | "
+          f"{'MSE AES':>9} | {'PSNR AES':>9} | {'Chi Plain':>10} | "
+          f"{'Chi AES':>8} | {'RS Plain':>9} | {'RS AES':>7}")
+    print(f"  {'-'*110}")
+
+    results = []
+    BASE_CHAR = "A"  # Karakter standard padding generator untuk sampel uji
+
+    for size in sizes:
+        message = BASE_CHAR * size
+        payload_plain = message.encode('utf-8')
+
+        # Evaluasi Alur LSB Polos
+        stego_plain = lsb.embed(cover_img, payload_plain)
+        m1 = lsb.calculate_metrics(cover_img, stego_plain)
+        c1 = steganalysis.chi_square_attack(stego_plain)
+        r1 = steganalysis.rs_analysis(stego_plain)
+
+        # Evaluasi Alur LSB + AES-128
+        key = aes.generate_key(password)
+        iv, ciphertext = aes.encrypt(payload_plain, key)
+        payload_enc = iv + ciphertext
+        stego_aes = lsb.embed(cover_img, payload_enc)
+        m2 = lsb.calculate_metrics(cover_img, stego_aes)
+        c2 = steganalysis.chi_square_attack(stego_aes)
+        r2 = steganalysis.rs_analysis(stego_aes)
+
+        chi1 = "Terdeteksi" if c1['detected'] else "Aman"
+        chi2 = "Terdeteksi" if c2['detected'] else "Aman"
+        rs1  = "Terdeteksi" if r1['detected'] else "Aman"
+        rs2  = "Terdeteksi" if r2['detected'] else "Aman"
+
+        # Tampilkan record baris tabel
+        print(f"  {size:>8} | {m1['mse']:>10} | {m1['psnr']:>10} | "
+              f"{m2['mse']:>9} | {m2['psnr']:>9} | {chi1:>10} | "
+              f"{chi2:>8} | {rs1:>9} | {rs2:>7}")
+
+        results.append({
+            'size': size,
+            'lsb_plain': {'metrics': m1, 'chi': c1, 'rs': r1},
+            'lsb_aes':   {'metrics': m2, 'chi': c2, 'rs': r2}
+        })
+    return results
+
+
+# ============================================================
+# MODE INTERAKTIF (TANYA JAWAB MENU)
+# ============================================================
+
+def interactive_mode():
+    """
+    Mode Interaktif CLI dengan visualisasi ASCII Art yang estetik dan jelas.
+    Menggunakan loop agar tidak langsung keluar otomatis setelah proses selesai.
+    """
+    while True:
+        # Bersihkan layar terminal agar tampilan rapi setiap kembali ke menu
+        os.system('cls' if os.name == 'nt' else 'clear')
+
+        print("╔══════════════════════════════════════════════════════════════╗")
+        print("║                                                              ║")
+        print("║     ██╗     ██████╗ ██████╗        █████╗ ███████╗██████╗    ║")
+        print("║     ██║    ██╔════╝ ██╔══██╗      ██╔══██╗██╔════╝██╔════╝   ║")
+        print("║     ██║    ╚█████╗  ██████╔╝      ███████║█████╗  ███████╗   ║")
+        print("║     ██║     ╚═══██╗ ██╔══██╗      ██╔══██║██╔══╝  ╚════██║   ║")
+        print("║     ███████╗██████╔╝██████╔╝      ██║  ██║███████╗███████║   ║")
+        print("║     ╚══════╝╚═════╝ ╚═════╝       ╚═╝  ╚═╝╚══════╝╚══════╝   ║")
+        print("║                                                              ║")
+        print("║                  S T E G A N O G R A P H Y                   ║")
+        print("║                                                              ║")
+        print("╠══════════════════════════════════════════════════════════════╣")
+        print("║  WELCOME TO LSB-AES VAULT                                    ║")
+        print("║  Secure Image Steganography Pipeline CLI                     ║")
+        print("║  AES-128-CBC | Least Significant Bit Implementation          ║")
+        print("║  Evaluation Metrics: PSNR, MSE, Chi-Square, RS Analysis      ║")
+        print("╚══════════════════════════════════════════════════════════════╝")
+        
+        # Status bar di bawah bingkai utama
+        print("-" * 64)
+        
+        print("  [1] Embed Pesan Rahasia ke Citra (Enkripsi AES)")
+        print("  [2] Ekstrak & Dekripsi Pesan dari Citra Stego")
+        print("  [3] Eksperimen Komparasi Matriks (1 Sampel Pesan)")
+        print("  [4] Eksperimen Variasi Skala Ukuran Payload")
+        print("  [5] Keluar dari Sistem")
+        print("-" * 64)
+
+        choice = input("\n  Pilih menu [1/2/3/4/5]: ").strip()
+
+        if choice == "1":
+            print("\n[MENU 1] PROSES EMBEDDING")
+            cover  = input("  Path citra cover (contoh: cover.png): ").strip()
+            output = input("  Path output stego (contoh: stego.png): ").strip()
+            msg    = input("  Pesan rahasia: ").strip()
+            pw     = input("  Password kunci: ").strip()
+            embed_pipeline(cover, msg, pw, output)
+            input("\n  [INFO] Proses selesai. Tekan Enter untuk kembali ke menu utama...")
+
+        elif choice == "2":
+            print("\n[MENU 2] PROSES EKSTRAKSI")
+            stego = input("  Path citra stego (contoh: stego.png): ").strip()
+            pw    = input("  Password kunci: ").strip()
+            extract_pipeline(stego, pw)
+            input("\n  [INFO] Proses selesai. Tekan Enter untuk kembali ke menu utama...")
+
+        elif choice == "3":
+            print("\n[MENU 3] EKSPERIMEN PERBANDINGAN")
+            cover = input("  Path citra cover (contoh: cover.png): ").strip()
+            msg   = input("  Pesan rahasia: ").strip()
+            pw    = input("  Password kunci: ").strip()
+            run_experiment(cover, msg, pw)
+            input("\n  [INFO] Eksperimen selesai. Tekan Enter untuk kembali ke menu utama...")
+
+        elif choice == "4":
+            print("\n[MENU 4] EKSPERIMEN SKALABILITAS")
+            cover = input("  Path citra cover (contoh: cover.png): ").strip()
+            pw    = input("  Password kunci: ").strip()
+            run_varexperiment(cover, pw)
+            input("\n  [INFO] Eksperimen selesai. Tekan Enter untuk kembali ke menu utama...")
+            
+        elif choice == "5":
+            print("\n  Terima kasih! Keluar dari sistem LSB+AES Vault.")
+            break
+
+        else:
+            print("  [ERROR] Pilihan menu tidak tersedia.")
+            input("  Tekan Enter untuk mencoba lagi...")
+
+
+# ============================================================
+# UTILITY HELPER
+# ============================================================
+
+def _make_dummy_cover(path: str, size: int = 512):
+    """Membuat gambar contoh bising secara acak jika berkas pengujian absen."""
+    dummy = np.random.randint(50, 200, (size, size, 3), dtype=np.uint8)
+    Image.fromarray(dummy).save(path)
+    print(f"  [INFO] Citra dummy {size}x{size} sukses dibuat: {path}")
+
+
+# ============================================================
+# MAIN ENTRY POINT
+# ============================================================
+
+if __name__ == "__main__":
+
+    # Kasus 1: Akses Menu Interaktif
+    if len(sys.argv) < 2:
+        interactive_mode()
+
+    # Kasus 2: CLI Command Embed
+    elif sys.argv[1] == "embed" and len(sys.argv) == 6:
+        _, _, cover, output, msg, pw = sys.argv
+        embed_pipeline(cover, msg, pw, output)
+
+    # Kasus 3: CLI Command Extract
+    elif sys.argv[1] == "extract" and len(sys.argv) == 4:
+        _, _, stego, pw = sys.argv
+        extract_pipeline(stego, pw)
+
+    # Kasus 4: CLI Command Experiment Perbandingan
+    elif sys.argv[1] == "experiment" and len(sys.argv) == 5:
+        _, _, cover, msg, pw = sys.argv
+        run_experiment(cover, msg, pw)
+
+    # Kasus 5: CLI Command Experiment Variasi Ukuran
+    elif sys.argv[1] == "varexperiment" and len(sys.argv) == 4:
+        _, _, cover, pw = sys.argv
+        run_varexperiment(cover, pw)
+
+    # Kasus Default: Penanganan salah argumen (Menampilkan Manual Panduan)
+    else:
+        print("\n[ERROR] Format parameter CLI salah.")
+        print("Panduan Penggunaan:")
+        print("  python main.py                              → Mode interaktif (pilihan menu)")
+        print("  python main.py embed <cover> <out> <msg> <pw>")
+        print("  python main.py extract <stego> <pw>")
+        print("  python main.py experiment <cover> <msg> <pw>")
+        print("  python main.py varexperiment <cover> <pw>  → Variasi beban panjang pesan")
