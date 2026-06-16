@@ -96,10 +96,10 @@ def run_experiment(cover_path: str, message: str, password: str):
     print(f"  Kapasitas     : {lsb.get_capacity(cover_img)} bytes")
     print(f"  Pesan uji     : '{message[:50]}...' ({len(message)} char)\n")
 
-    print("=== CHI-SQUARE COVER IMAGE ===")
-    cover_chi = steganalysis.chi_square_attack(cover_img)
-    print(cover_chi)
-    print()
+    # print("=== CHI-SQUARE COVER IMAGE ===")
+    # cover_chi = steganalysis.chi_square_attack(cover_img)
+    # print(cover_chi)
+    # print()
 
     payload_plain = message.encode('utf-8')
 
