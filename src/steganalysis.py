@@ -48,9 +48,9 @@ def chi_square_attack(image: np.ndarray, payload_size_bytes: int = None) -> dict
         'conclusion': 'TERDETEKSI mengandung pesan' if detected else 'TIDAK terdeteksi'
     }
 
-def rs_analysis(image: np.ndarray) -> dict:
-    gray = np.mean(image, axis=2).astype(int)
-    h, w = gray.shape
+def rs_analysis(image: np.ndarray, channel: int = 0) -> dict:
+    channel_matrix = image[:, :, channel].astype(int)
+    h, w = channel_matrix.shape
     group_size = 4
 
     def discriminant(group):
@@ -69,13 +69,13 @@ def rs_analysis(image: np.ndarray) -> dict:
         return flipped
 
     mask = [1, 0, 1, 0]
-    R, S, N = 0, 0, 0
-    Rm, Sm, Nm = 0, 0, 0
+    R, S = 0, 0
+    Rm, Sm = 0, 0
     total_groups = 0
 
     for i in range(0, h - 1, 1):
         for j in range(0, w - group_size, group_size):
-            group = gray[i, j:j+group_size].tolist()
+            group = channel_matrix[i, j:j+group_size].tolist()
             if len(group) < group_size:
                 continue
 
@@ -104,9 +104,13 @@ def rs_analysis(image: np.ndarray) -> dict:
     diff_R = abs(R_norm - Rm_norm)
     diff_S = abs(S_norm - Sm_norm)
 
-    detected = diff_R > 0.02 or diff_S > 0.02
+    # Toleransi threshold RS standar (0.01 - 0.02)
+    detected = diff_R > 0.015 or diff_S > 0.015
+
+    channel_names = {0: 'Red', 1: 'Green', 2: 'Blue'}
 
     return {
+        'channel': channel_names.get(channel, str(channel)),
         'R':      round(R_norm,  4),
         'S':      round(S_norm,  4),
         'Rm':     round(Rm_norm, 4),
@@ -115,4 +119,26 @@ def rs_analysis(image: np.ndarray) -> dict:
         'diff_S': round(diff_S,  4),
         'detected': detected,
         'conclusion': 'TERDETEKSI mengandung pesan' if detected else 'TIDAK terdeteksi'
+    }
+
+def rs_analysis_all_channels(image: np.ndarray) -> dict:
+    """
+    Menjalankan RS Analysis ke tiga channel (R, G, B) secara independen
+    dan mengambil kesimpulan total.
+    """
+    channels = {0: 'Red', 1: 'Green', 2: 'Blue'}
+    results_per_channel = {}
+    any_detected = False
+    
+    # Lakukan iterasi untuk R (0), G (1), dan B (2)
+    for ch_idx, ch_name in channels.items():
+        res = rs_analysis(image, channel=ch_idx)
+        results_per_channel[ch_name] = res
+        if res['detected']:
+            any_detected = True
+            
+    return {
+        'detail': results_per_channel,
+        'detected': any_detected,
+        'conclusion': 'TERDETEKSI mengandung pesan (pada salah satu/lebih channel)' if any_detected else 'TIDAK terdeteksi'
     }

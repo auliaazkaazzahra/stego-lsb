@@ -57,21 +57,40 @@ def embed_pipeline(cover_path: str, message: str, password: str, output_path: st
 # ============================================================
 
 def extract_pipeline(stego_path: str, password: str) -> str:
-    """
-    Pipeline ekstraksi: ekstrak bit LSB → dekripsi AES-128.
-    """
     print(f"\n{'='*55}")
     print("  EXTRACT: LSB + AES-128")
     print(f"{'='*55}")
 
     stego_img = lsb.load_image(stego_path)
-    payload = lsb.extract(stego_img)
+    
+    try:
+        payload = lsb.extract(stego_img)
+    except ValueError as e:
+        print(f"  [ERROR] Gagal mengekstrak pesan: {e}")
+        print(f"{'='*55}\n")
+        return None
 
     iv = payload[:16]
     ciphertext = payload[16:]
     key = aes.generate_key(password)
-    plaintext = aes.decrypt(ciphertext, key, iv)
-    message = plaintext.decode('utf-8')
+    
+    try:
+        # Mendekripsi dan membaca pesan
+        plaintext = aes.decrypt(ciphertext, key, iv)
+        message = plaintext.decode('utf-8')
+    except ValueError:
+        # Password salah
+        print("  [ERROR] Akses ditolak! Password salah atau data citra telah rusak.")
+        print(f"{'='*55}\n")
+        return None
+    except UnicodeDecodeError:
+        print("  [ERROR] Akses ditolak! Password salah.")
+        print(f"{'='*55}\n")
+        return None
+    except Exception as e:
+        print(f"  [ERROR] Terjadi kesalahan sistem: {e}")
+        print(f"{'='*55}\n")
+        return None
 
     print(f"  Stego-image   : {stego_path}")
     print(f"  Payload size  : {len(payload)} bytes")
@@ -79,7 +98,6 @@ def extract_pipeline(stego_path: str, password: str) -> str:
     print(f"{'='*55}\n")
 
     return message
-
 
 # ============================================================
 # EKSPERIMEN 1: PERBANDINGAN LSB BIASA vs LSB + AES-128
@@ -112,14 +130,14 @@ def run_experiment(cover_path: str, message: str, password: str):
     m1 = lsb.calculate_metrics(cover_img, stego_plain)
     b1 = lsb.calculate_ber(payload_plain, extracted_plain)
     c1 = steganalysis.chi_square_attack(stego_plain, len(payload_plain))
-    r1 = steganalysis.rs_analysis(stego_plain)
+    r1 = steganalysis.rs_analysis_all_channels(stego_plain)
     print(f"    MSE         : {m1['mse']}")
     print(f"    PSNR        : {m1['psnr']} dB")
     print(f"    BER         : {b1}")
     print(f"    Chi-square  : {c1['conclusion']}")
-    print(f"    RS Analysis : {r1['conclusion']}\n")
+    print(f"    RS Analysis : {r1['conclusion']}")
 
-    # --- EXP 2: LSB + AES-128 ---
+# --- EXP 2: LSB + AES-128 ---
     print("  [EXP 2] Menjalankan LSB + AES-128...")
     key = aes.generate_key(password)
     iv, ciphertext = aes.encrypt(payload_plain, key)
@@ -129,7 +147,7 @@ def run_experiment(cover_path: str, message: str, password: str):
     m2 = lsb.calculate_metrics(cover_img, stego_aes)
     b2 = lsb.calculate_ber(payload_enc, extracted_enc)
     c2 = steganalysis.chi_square_attack(stego_aes, len(payload_enc))
-    r2 = steganalysis.rs_analysis(stego_aes)
+    r2 = steganalysis.rs_analysis_all_channels(stego_aes) 
     print(f"    MSE         : {m2['mse']}")
     print(f"    PSNR        : {m2['psnr']} dB")
     print(f"    BER         : {b2}")
@@ -145,9 +163,11 @@ def run_experiment(cover_path: str, message: str, password: str):
     print(f"  {'BER':<25} | {str(b1):<16} | {str(b2):<16}")
     print(f"  {'Chi-sq p-value':<25} | {str(c1['p_value']):<16} | {str(c2['p_value']):<16}")
     print(f"  {'Chi-sq Terdeteksi':<25} | {str(c1['detected']):<16} | {str(c2['detected']):<16}")
-    print(f"  {'RS diff_R':<25} | {str(r1['diff_R']):<16} | {str(r2['diff_R']):<16}")
-    print(f"  {'RS diff_S':<25} | {str(r1['diff_S']):<16} | {str(r2['diff_S']):<16}")
-    print(f"  {'RS Terdeteksi':<25} | {str(r1['detected']):<16} | {str(r2['detected']):<16}")
+    
+    # Ambil diff_R dan diff_S dari channel Red sebagai perwakilan tabel
+    print(f"  {'RS diff_R (Red)':<25} | {str(r1['detail']['Red']['diff_R']):<16} | {str(r2['detail']['Red']['diff_R']):<16}")
+    print(f"  {'RS diff_S (Red)':<25} | {str(r1['detail']['Red']['diff_S']):<16} | {str(r2['detail']['Red']['diff_S']):<16}")
+    print(f"  {'RS Terdeteksi (Global)':<25} | {str(r1['detected']):<16} | {str(r2['detected']):<16}")
     print(f"{'='*65}\n")
 
     results = {
@@ -218,7 +238,7 @@ def run_varexperiment(cover_path: str, password: str):
         b1 = lsb.calculate_ber(payload_plain, extracted_plain)
     
         c1 = steganalysis.chi_square_attack(stego_plain, len(payload_plain))
-        r1 = steganalysis.rs_analysis(stego_plain)
+        r1 = steganalysis.rs_analysis_all_channels(stego_plain)
 
         key = aes.generate_key(password)
         iv, ciphertext = aes.encrypt(payload_plain, key)
@@ -229,7 +249,7 @@ def run_varexperiment(cover_path: str, password: str):
         b2 = lsb.calculate_ber(payload_enc, extracted_enc)
     
         c2 = steganalysis.chi_square_attack(stego_aes, len(payload_enc))
-        r2 = steganalysis.rs_analysis(stego_aes)
+        r2 = steganalysis.rs_analysis_all_channels(stego_aes)
 
         results.append({
             'size': size,
@@ -259,7 +279,7 @@ def run_varexperiment(cover_path: str, password: str):
     print("\n" + "-" * 100)
 
     print("\n[BAGIAN 2: METRIK KEAMANAN STEGANALISIS]\n")
-    print(f"  {'Ukuran':>6} | {'Chi Stat (Plain)':<22} | {'Chi Stat (AES)':<22} | {'RS Diff (Plain)':<19} | {'RS Diff (AES)':<19}")
+    print(f"  {'Ukuran':>6} | {'Chi Stat (Plain)':<22} | {'Chi Stat (AES)':<22} | {'RS Diff Red (Plain)':<19} | {'RS Diff Red (AES)':<19}")
     print("  " + "-" * 91)
     for r in results:
         size = r['size']
@@ -270,8 +290,10 @@ def run_varexperiment(cover_path: str, password: str):
 
         chi1_str = f"{cp['chi_square']:.2f} [{'TERDETEKSI' if cp['detected'] else 'AMAN'}]"
         chi2_str = f"{ca['chi_square']:.2f} [{'TERDETEKSI' if ca['detected'] else 'AMAN'}]"
-        rs1_str  = f"{rp['diff_R']:.4f} [{'TERDETEKSI' if rp['detected'] else 'AMAN'}]"
-        rs2_str  = f"{ra['diff_R']:.4f} [{'TERDETEKSI' if ra['detected'] else 'AMAN'}]"
+        
+        # Ambil diff_R dari detail Red (global)
+        rs1_str  = f"{rp['detail']['Red']['diff_R']:.4f} [{'TERDETEKSI' if rp['detected'] else 'AMAN'}]"
+        rs2_str  = f"{ra['detail']['Red']['diff_R']:.4f} [{'TERDETEKSI' if ra['detected'] else 'AMAN'}]"
 
         print(f"  {size:>6} | {chi1_str:<22} | {chi2_str:<22} | {rs1_str:<19} | {rs2_str:<19}")
 
@@ -297,13 +319,13 @@ def _export_experiment_csv(results: dict, cover_path: str, msg_len: int):
         ["Metrik", "LSB Biasa", "LSB + AES-128"],
         ["MSE",           plain['metrics']['mse'],   aes_r['metrics']['mse']],
         ["PSNR (dB)",     plain['metrics']['psnr'],  aes_r['metrics']['psnr']],
-        ["BER",           plain['ber'],               aes_r['ber']],
+        ["BER",           plain['ber'],              aes_r['ber']],
         ["Chi-sq Stat",   plain['chi']['chi_square'], aes_r['chi']['chi_square']],
         ["Chi-sq p-value",plain['chi']['p_value'],    aes_r['chi']['p_value']],
         ["Chi-sq Deteksi",plain['chi']['detected'],   aes_r['chi']['detected']],
-        ["RS diff_R",     plain['rs']['diff_R'],      aes_r['rs']['diff_R']],
-        ["RS diff_S",     plain['rs']['diff_S'],      aes_r['rs']['diff_S']],
-        ["RS Deteksi",    plain['rs']['detected'],    aes_r['rs']['detected']],
+        ["RS diff_R (Red)", plain['rs']['detail']['Red']['diff_R'], aes_r['rs']['detail']['Red']['diff_R']],
+        ["RS diff_S (Red)", plain['rs']['detail']['Red']['diff_S'], aes_r['rs']['detail']['Red']['diff_S']],
+        ["RS Deteksi Global",plain['rs']['detected'],               aes_r['rs']['detected']],
     ]
 
     with open(filename, 'w', newline='') as f:
@@ -321,10 +343,10 @@ def _export_varexperiment_csv(results: list, cover_path: str):
         "Ukuran (char)",
         "MSE Plain", "PSNR Plain", "BER Plain",
         "Chi Plain Stat", "Chi Plain p-val", "Chi Plain Deteksi",
-        "RS Plain diff_R", "RS Plain diff_S", "RS Plain Deteksi",
+        "RS Plain diff_R (Red)", "RS Plain diff_S (Red)", "RS Plain Deteksi Global",
         "MSE AES", "PSNR AES", "BER AES",
         "Chi AES Stat", "Chi AES p-val", "Chi AES Deteksi",
-        "RS AES diff_R", "RS AES diff_S", "RS AES Deteksi",
+        "RS AES diff_R (Red)", "RS AES diff_S (Red)", "RS AES Deteksi Global",
     ]
 
     with open(filename, 'w', newline='') as f:
@@ -338,10 +360,10 @@ def _export_varexperiment_csv(results: list, cover_path: str):
                 r['size'],
                 p['metrics']['mse'], p['metrics']['psnr'], p['ber'],
                 p['chi']['chi_square'], p['chi']['p_value'], p['chi']['detected'],
-                p['rs']['diff_R'], p['rs']['diff_S'], p['rs']['detected'],
+                p['rs']['detail']['Red']['diff_R'], p['rs']['detail']['Red']['diff_S'], p['rs']['detected'],
                 a['metrics']['mse'], a['metrics']['psnr'], a['ber'],
                 a['chi']['chi_square'], a['chi']['p_value'], a['chi']['detected'],
-                a['rs']['diff_R'], a['rs']['diff_S'], a['rs']['detected'],
+                a['rs']['detail']['Red']['diff_R'], a['rs']['detail']['Red']['diff_S'], a['rs']['detected'],
             ])
 
     print(f"\n  [INFO] Hasil disimpan ke: {filename}")
@@ -385,6 +407,13 @@ def interactive_mode():
         if choice == "1":
             print("\n[MENU 1] PROSES EMBEDDING")
             cover  = input("  Path citra cover (contoh: cover.png): ").strip()
+            
+            # --- ERROR HANDLING: Cek keberadaan file ---
+            if not os.path.exists(cover):
+                print(f"\n  [ERROR] File gambar '{cover}' tidak ditemukan!")
+                input("  Tekan Enter untuk kembali ke menu utama...")
+                continue
+
             output = input("  Path output stego (contoh: stego.png): ").strip()
             msg    = input("  Pesan rahasia: ").strip()
             pw     = input("  Password kunci: ").strip()
@@ -394,6 +423,12 @@ def interactive_mode():
         elif choice == "2":
             print("\n[MENU 2] PROSES EKSTRAKSI")
             stego = input("  Path citra stego (contoh: stego.png): ").strip()
+            
+            if not os.path.exists(stego):
+                print(f"\n  [ERROR] File gambar '{stego}' tidak ditemukan!")
+                input("  Tekan Enter untuk kembali ke menu utama...")
+                continue
+
             pw    = input("  Password kunci: ").strip()
             extract_pipeline(stego, pw)
             input("\n  [INFO] Proses selesai. Tekan Enter untuk kembali ke menu utama...")
@@ -401,6 +436,12 @@ def interactive_mode():
         elif choice == "3":
             print("\n[MENU 3] EKSPERIMEN PERBANDINGAN")
             cover = input("  Path citra cover (contoh: cover.png): ").strip()
+            
+            if not os.path.exists(cover):
+                print(f"\n  [ERROR] File gambar '{cover}' tidak ditemukan!")
+                input("  Tekan Enter untuk kembali ke menu utama...")
+                continue
+
             msg   = input("  Pesan rahasia: ").strip()
             pw    = input("  Password kunci: ").strip()
             run_experiment(cover, msg, pw)
@@ -409,6 +450,12 @@ def interactive_mode():
         elif choice == "4":
             print("\n[MENU 4] EKSPERIMEN SKALABILITAS")
             cover = input("  Path citra cover (contoh: cover.png): ").strip()
+            
+            if not os.path.exists(cover):
+                print(f"\n  [ERROR] File gambar '{cover}' tidak ditemukan!")
+                input("  Tekan Enter untuk kembali ke menu utama...")
+                continue
+
             pw    = input("  Password kunci: ").strip()
             run_varexperiment(cover, pw)
             input("\n  [INFO] Eksperimen selesai. Tekan Enter untuk kembali ke menu utama...")
@@ -420,7 +467,6 @@ def interactive_mode():
         else:
             print("  [ERROR] Pilihan menu tidak tersedia.")
             input("  Tekan Enter untuk mencoba lagi...")
-
 
 # ============================================================
 # UTILITY HELPER
