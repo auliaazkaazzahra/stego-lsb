@@ -4,6 +4,7 @@ import csv
 import numpy as np
 import random
 import string
+import getpass
 from PIL import Image
 
 from src import aes, lsb, steganalysis
@@ -416,7 +417,7 @@ def interactive_mode():
 
             output = input("  Path output stego (contoh: stego.png): ").strip()
             msg    = input("  Pesan rahasia: ").strip()
-            pw     = input("  Password kunci: ").strip()
+            pw     = getpass.getpass("  Password kunci: ").strip()
             embed_pipeline(cover, msg, pw, output)
             input("\n  [INFO] Proses selesai. Tekan Enter untuk kembali ke menu utama...")
 
@@ -429,7 +430,7 @@ def interactive_mode():
                 input("  Tekan Enter untuk kembali ke menu utama...")
                 continue
 
-            pw    = input("  Password kunci: ").strip()
+            pw = getpass.getpass("  Password kunci: ").strip()
             extract_pipeline(stego, pw)
             input("\n  [INFO] Proses selesai. Tekan Enter untuk kembali ke menu utama...")
 
@@ -443,7 +444,7 @@ def interactive_mode():
                 continue
 
             msg   = input("  Pesan rahasia: ").strip()
-            pw    = input("  Password kunci: ").strip()
+            pw    = getpass.getpass("  Password kunci: ").strip()
             run_experiment(cover, msg, pw)
             input("\n  [INFO] Eksperimen selesai. Tekan Enter untuk kembali ke menu utama...")
 
@@ -456,7 +457,7 @@ def interactive_mode():
                 input("  Tekan Enter untuk kembali ke menu utama...")
                 continue
 
-            pw    = input("  Password kunci: ").strip()
+            pw = getpass.getpass("  Password kunci: ").strip()
             run_varexperiment(cover, pw)
             input("\n  [INFO] Eksperimen selesai. Tekan Enter untuk kembali ke menu utama...")
 
