@@ -312,7 +312,7 @@ def run_varexperiment(cover_path: str, password: str):
 # ============================================================
 
 def _export_experiment_csv(results: dict, cover_path: str, msg_len: int):
-    filename = "hasil_eksperimen_komparasi.csv"
+    filename = "results/hasil_eksperimen_komparasi.csv"
     plain = results['lsb_plain']
     aes_r = results['lsb_aes']
 
@@ -338,7 +338,7 @@ def _export_experiment_csv(results: dict, cover_path: str, msg_len: int):
 
 
 def _export_varexperiment_csv(results: list, cover_path: str):
-    filename = "hasil_eksperimen_variasi.csv"
+    filename = "results/hasil_eksperimen_variasi.csv"
 
     header = [
         "Ukuran (char)",
