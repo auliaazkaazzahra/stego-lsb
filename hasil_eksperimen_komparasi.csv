@@ -1,0 +1,11 @@
+# Cover: C:\Users\ASUS\Downloads\Uji Coba\cover.png | Panjang pesan: 403 karakter
+Metrik,LSB Biasa,LSB + AES-128
+MSE,0.002089,0.002244
+PSNR (dB),74.931,74.62
+BER,0.0,0.0
+Chi-sq Stat,109.6159,97.8018
+Chi-sq p-value,0.931746,0.754509
+Chi-sq Deteksi,False,False
+RS diff_R (Red),0.0,0.0
+RS diff_S (Red),0.0,0.0
+RS Deteksi Global,False,False

@@ -220,7 +220,7 @@ def run_varexperiment(cover_path: str, password: str):
                     sizes.append(s)
                     break
             except ValueError:
-                print("  [ERROR] Sila masukkan angka yang valid.")
+                print("  [ERROR] Silahkan masukkan angka yang valid.")
 
     print(f"\n  Memproses pengujian untuk {n} variasi ukuran...\n")
 

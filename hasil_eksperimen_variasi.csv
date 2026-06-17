@@ -1,0 +1,7 @@
+# Cover: C:\Users\ASUS\Downloads\Uji Coba\cover.png
+Ukuran (char),MSE Plain,PSNR Plain,BER Plain,Chi Plain Stat,Chi Plain p-val,Chi Plain Deteksi,RS Plain diff_R (Red),RS Plain diff_S (Red),RS Plain Deteksi Global,MSE AES,PSNR AES,BER AES,Chi AES Stat,Chi AES p-val,Chi AES Deteksi,RS AES diff_R (Red),RS AES diff_S (Red),RS AES Deteksi Global
+100,0.000584,80.4693,0.0,64.5316,0.611809,False,0.0,0.0,False,0.000696,79.7075,0.0,55.3058,0.256081,False,0.0,0.0,False
+1000,0.005093,71.0614,0.0,147.9497,0.997528,True,0.0,0.0,False,0.005155,71.0086,0.0,124.397,0.925663,False,0.0,0.0,False
+10000,0.050733,61.0779,0.0,404.9538,1.0,True,0.0,0.0,False,0.050903,61.0633,0.0,104.4883,0.369629,False,0.0,0.0,False
+40000,0.203124,55.0532,0.0,1259.7948,1.0,True,0.0,0.0,False,0.20374,55.04,0.0,139.5954,0.914797,False,0.0,0.0,False
+85000,0.431849,51.7775,0.0,2565.9817,1.0,True,0.0,0.0,False,0.432186,51.7741,0.0,117.6131,0.507265,False,0.0,0.0,False
